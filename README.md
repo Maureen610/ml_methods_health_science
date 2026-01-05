@@ -1,1 +1,1 @@
-# ml_methods_health_science
+# CHEP 898 - ML_methods_health_science
