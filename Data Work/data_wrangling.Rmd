@@ -1,0 +1,428 @@
+---
+title: "Data Wrangling and Visualization"
+output:
+      html_document:
+        keep_md: true
+---
+
+```{r}
+library(rstatix)
+library(tidyverse)
+library(pastecs)
+library(knitr)
+library(epitools)
+library(Epi)
+
+options(scipen=999) 
+```
+
+
+```{r}
+data <- read_csv("can_path_data.csv")
+```
+
+## General instructions
+
+### 1. Identify the variable types for each variable in the dataset
+
+```{r, echo=T, results='hide'}
+glimpse(data)
+```
+
+All of the variables here currently coded as _dbl_ except `ID` which is _chr_. That's incorrect and we are going to need to fix that when we recode.
+
+```{r}
+### Select specific columns
+cols <- c("SDC_EDU_LEVEL", "HS_GEN_HEALTH", "HS_ROUTINE_VISIT_EVER", "HS_ROUTINE_VISIT_LAST", "HS_DENTAL_VISIT_EVER", "HS_DENTAL_VISIT_LAST")
+data <- data %>% mutate_at(cols, factor)
+
+```
+
+```{r, echo=T, results='hide'}
+glimpse(data)
+```
+
+```{r}
+### Select by column number
+data <- data %>% mutate_at(10:15, factor)
+```
+
+```{r, echo=T, results='hide'}
+glimpse(data)
+```
+
+### 3. Recode and label categorical variables as necessary
+
+```{r}
+data <- data %>%
+	mutate(gender_recode = case_when(
+		SDC_GENDER == 1 ~ "Male",
+    SDC_GENDER == 2 ~ "Female"
+	))
+
+data$gender_recode <- as.factor(data$gender_recode) 
+
+### Checking our code to make sure our recode is correct
+table(data$SDC_GENDER, data$gender_recode)
+```
+
+### Add the `NUT_VEG_QTY` and the `NUT_FRUITS_QTY` to create one variable
+    * Create a categorical variable that represents the recommended fruit and vegetable consumption per day
+
+```{r}
+summary(data$NUT_VEG_QTY)
+summary(data$NUT_FRUITS_QTY)
+
+### No missing data the no weird codings for the numbers. Great! 
+
+data <- data %>%
+	mutate(fruit_veg_tot = NUT_VEG_QTY + NUT_FRUITS_QTY)
+
+summary(data$fruit_veg_tot)
+
+data <- data %>%
+	mutate(fruit_veg_cat = case_when(
+		fruit_veg_tot <= 7  ~ "Not Meeting Guidelines",
+    fruit_veg_tot > 7 ~ "Meeting Guidelines"
+	))
+
+table(data$fruit_veg_cat)
+
+data <- data %>%
+	mutate(fruit_veg_dic = case_when(
+		fruit_veg_tot <= 7 ~ 0,
+    fruit_veg_tot > 7 ~ 1
+	))
+
+table(data$fruit_veg_tot, data$fruit_veg_cat)
+```
+
+### Create a categorical variable for the `PA_TOTAL_SHORT` variable the defines low, moderate, and high activity per week
+    * Low - < 600 MET minutes per week
+    * Moderate - >=600 to <3000 MET minutes per week
+    * High - >=3000 MET minutes per week
+
+### Calculate the mean and standard deviation
+    * For the variables were it is appropriate
+    * Including the new variables you have created
+    
+```{r}
+summary(data$PA_TOTAL_SHORT)
+
+data <- data %>%
+	mutate(pa_cat = case_when(
+		PA_TOTAL_SHORT < 600  ~ "Low Activity",
+		PA_TOTAL_SHORT >= 3000 ~ "High Activity",
+		PA_TOTAL_SHORT >= 600 ~ "Moderate Activity"
+	))
+
+### Flag we need to put the low and how activity first otherwise we don't get the right answer
+```
+
+### Calculate the percents and frequencies 
+    * For the variables were it is appropriate to do so
+
+There are __MANY__ different ways to do this in R. There is no one best way. 
+
+```{r}
+## First we need to make sure we get the variables recoded and organized
+
+### Example with gender where we already recoded
+gender_table <- bind_rows(table(data$gender_recode), prop.table(table(data$gender_recode)))
+
+### Example with fruit_veg_cat where we already recoded
+fruit_veg_table <- bind_rows(table(data$fruit_veg_cat), prop.table(table(data$fruit_veg_cat)))
+```
+
+### Are there missing data?
+
+```{r}
+summary(data$fruit_veg_tot)
+```
+
+### Create a 2*2 table for fruit and vegetable consumption by gender
+    * Interpret the 2*2 table result
+
+```{r}
+gender_fv_table <- table(data$gender_recode, data$fruit_veg_cat)
+gender_fv_table
+```
+
+## Joining datasets
+
+### Stacking 2 datasets on top of each other
+
+If we want to stack two datasets we need to use the `bind` set of functions. We can either use `bind_rows` or `bind_cols` from the `tidyverse` set of packages to do this. Let's say we have two datasets with the same information but different participants. We want to stack them so we can do some bigger analysis. 
+
+```{r}
+data1 <- read_csv("data_1.csv")
+data2 <- read_csv("data_2.csv")
+```
+
+Data1 and Data2 have the some number and information in the columns but they are not together. We can join them using `bind_rows`. 
+
+```{r}
+data_1_2 <- bind_rows(data1, data2)
+```
+
+2. Join by ID
+
+If you have 2 datasets with different data that you want to join you can use different join methods. These terms are from computer science. `full_join`, `left_join`, `right_join`, etc. 
+
+```{r}
+names_data <- read_csv("names.csv")
+glimpse(names_data)
+
+data_all <- left_join(data_1_2, names_data, by = join_by(id))
+table(data_all$parent)
+```
+
+
+## Data Viz
+
+### 1. ggplot2 General
+
+ggplot2 is an open-source data visualization package for the statistical programming language R. Created by Hadley Wickham in 2005, ggplot2 is an implementation of Leland Wilkinson's Grammar of Graphics—a general scheme for data visualization which breaks up graphs into semantic components such as scales and layers.[Wikipedia](https://en.wikipedia.org/wiki/Ggplot2) The basic idea is to build plots layer by layer. With ggplot2 you can control absolutely everything about a plot. 
+
+Data viz is a big place where R and Stata diverge a lot. With R giving much more flexibility (and sometimes annoyance) in terms of visualizing data. We are going to cover basics but recommend the BBC Code Book [https://bbc.github.io/rcookbook/](https://bbc.github.io/rcookbook/) and Keiran Healey's book _Data Visualization_ [https://kieranhealy.org/publications/dataviz/](https://kieranhealy.org/publications/dataviz/) which is part of the the `socviz` package [https://kjhealy.github.io/socviz/](https://kjhealy.github.io/socviz/. )
+
+### 2. Histograms and single variable box plots
+
+ggplot2 is built on things called *geoms* which represent different types of plots. There are *geoms* for histograms, scatterplots, beeswarm, and many other plots. Here we are focusing two basic plots and the defaults of everything else. 
+
+#### Histograms
+
+```{r}
+pa_histo <- ggplot(data, aes(PA_TOTAL_SHORT)) + 
+              geom_histogram()
+plot(pa_histo)
+```
+
+Here *ggplot2* is gives us a warning because the binwidth might not be appropriate. We can pick another binwidth. 
+
+```{r}
+pa_histo_bin_100 <- ggplot(data, aes(PA_TOTAL_SHORT)) + 
+              geom_histogram(binwidth = 100)
+plot(pa_histo_bin_100)
+```
+
+#### Single bar graphs
+
+People get stuck in R making bar graphs because they are used to Excel and only have the mean value of a given column then making the bar graph from that mean column. It's always questionnable whether you should be making a bar graph, but if you really need to here is how you can do it in R. 
+
+```{r}
+# Recoding income here so we can see the levels more easily
+
+data <- data %>%
+	mutate(income_recode = case_when(
+		SDC_INCOME == 1 ~ "1_Less than 10 000 $",
+    SDC_INCOME == 2 ~ "2_10 000 $ - 24 999 $",
+		SDC_INCOME == 3 ~ "3_25 000 $ - 49 999 $",
+		SDC_INCOME == 4 ~ "4_50 000 $ - 74 999 $",
+    SDC_INCOME == 5 ~ "5_75 000 $ - 99 999 $",
+		SDC_INCOME == 6 ~ "6_100 000 $ - 149 999 $",
+    SDC_INCOME == 7 ~ "7_150 000 $ - 199 999 $",
+    SDC_INCOME == 8 ~	"8_200 000 $ or more"
+	))
+
+table(data$SDC_INCOME, data$income_recode)
+```
+
+```{r}
+bar_income <- ggplot(data, aes(income_recode)) + 
+                geom_bar() + 
+                labs(x = "Income Categories") + 
+                theme(axis.text.x = element_text(angle = 90))       
+plot(bar_income)
+```
+
+#### Single variable boxplots
+
+```{r}
+boxplot <- ggplot(data, aes(PA_TOTAL_SHORT)) + 
+              geom_boxplot() + 
+              coord_flip()  # Here we add coord_flip function to make the boxplot more as we would expect
+plot(boxplot)
+```
+
+### 3. Scatter plots
+
+Scatterplots plot the relationship between two variables. There are lots of things we can do and we will build a plot sequentially. We are going to plot the relationship between age and physical activity (two continuous variables). 
+
+```{r}
+scatter_plot <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT)) + 
+                  geom_point()
+plot(scatter_plot)
+```
+
+Common things you will see with a scatter plot including the following
+
+#### Adding a regression line
+
+Here we add another *geom* on top of the *geom_point* to start building our plot. We will use *geom_smooth* to add a line. The default in R is a lowess smoother. You can also add a linear regression line. I'm also changing the colour so we can see the difference between the two lines. It's best to use hexcodes for colours but we can also just use words. 
+
+```{r}
+scatter_plot_line <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT)) + 
+                  geom_point() + 
+                  geom_smooth(colour = "red") + 
+                  geom_smooth(method = "lm", colour = "#088da5")
+plot(scatter_plot_line)
+```
+
+#### Changing the variable names
+
+```{r}
+scatter_plot_variables <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT)) + 
+                  geom_point() + 
+                  geom_smooth(colour = "red") + 
+                  geom_smooth(method = "lm", colour = "#088da5") +
+                  labs(x = "Age", y = "Physical Activity")
+plot(scatter_plot_variables)
+```
+
+#### Changing the shading of the points
+
+We can use *alpha* to change the shading of the points. This lets use quickly avoid overplotting with lots of overlapping points. We need to play with this a bit. A good place to start is 0.5 and go from there. I ended up at 0.2 which I think shows the mass of data points and avoids too much emphasis on the outlier points. 
+
+```{r}
+scatter_plot_alpha <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT)) + 
+                  geom_point(alpha = 0.2) + 
+                  geom_smooth(colour = "red") + 
+                  geom_smooth(method = "lm", colour = "#088da5") +
+                  labs(x = "Age", y = "Physical Activity")
+plot(scatter_plot_alpha)
+```
+
+### 4. Grouping with ggplot2
+
+One of the best things about ggplot2 is the ability to easily *group_by* like we would do with data wrangling. We do this by adding groupings (colouring by a variable) or facets (creating separate plots). Here we want to group by gender to see if there are visual differences between genders in the age-PA association. 
+
+```{r}
+# Recoding gender here so we can see the man/women in the plot instead of 1 and 2
+
+data <- data %>%
+	mutate(gender_recode = case_when(
+		SDC_GENDER == 1 ~ "Man",
+    SDC_GENDER == 2 ~ "Woman"
+	))
+```
+
+Colouring by gender
+```{r}
+scatter_plot_gender <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT, colour = gender_recode)) + 
+                  geom_point(alpha = 0.2) + 
+                  labs(x = "Age", y = "Physical Activity", fill = "Gender") 
+plot(scatter_plot_gender)
+```
+
+Faceting by gender
+```{r}
+scatter_plot_gender <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT)) + 
+                  geom_point(alpha = 0.2) + 
+                  labs(x = "Age", y = "Physical Activity") +
+                  facet_wrap(~ gender_recode)
+plot(scatter_plot_gender)
+```
+
+
+### 5. Colours and themes
+
+Finally, there are many default colours and themes we can use to make the plots look good very quickly. A few things I use regularly. 
+
+#### Themes
+
+There are two themes I use regularly; *classic* and *bw*. Classic provides a clean looking plot with no/limited background. *bw* provides a black and white figure, which is great for publications that need no colour. 
+
+**Black and White Theme**
+
+```{r}
+scatter_plot_bw <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT, colour = gender_recode)) + 
+                  geom_point(alpha = 0.2) + 
+                  labs(x = "Age", y = "Physical Activity", colour = "Gender") +
+                  theme_bw()
+plot(scatter_plot_bw)
+```
+
+**Classic Theme**
+
+```{r}
+scatter_plot_classic <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT, colour = gender_recode)) + 
+                  geom_point(alpha = 0.2) + 
+                  labs(x = "Age", y = "Physical Activity", colour = "Gender") +
+                  theme_classic()
+plot(scatter_plot_classic)
+```
+
+#### Colours
+
+There are lots of default colours in R. The basic functions are *scale_colour* and *scale_fill*. We didn't talk about this much but colour and fill are different based what you are filling. If we go back to the gender colouring we can use different functions to change the colours. The colour brewer colours [https://colorbrewer2.org/](https://colorbrewer2.org/) using *scale_colour_brewer* or *scale_fill_brewer* for sensible default colours. 
+
+```{r}
+scatter_plot_gender_brewer <- ggplot(data, aes(x = SDC_AGE_CALC, y = PA_TOTAL_SHORT, colour = gender_recode)) + 
+                  geom_point(alpha = 0.2) + 
+                  scale_colour_manual(values = c("#E69F00", "#56B4E9")) +
+                  labs(x = "Age", y = "Physical Activity", colour = "Gender") 
+plot(scatter_plot_gender_brewer)
+```
+
+## geom_*
+
+There are lots of different geoms available with the standard `ggplot2` package [https://ggplot2.tidyverse.org/reference/](https://ggplot2.tidyverse.org/reference/), but there are also lots of other ones developed by the community in specific packages. For example, if we wanted to make a [joy plot](https://katherinemwood.github.io/post/joy/) we could use the `ggridges` package. Let's try. First, find a tutorial online and see if you can apply it to your data. I used [this one](https://r-charts.com/distribution/ggridges/). 
+
+
+### Cleaning income data
+
+```{r}
+# Recoding income to have a few categories for the joy plot
+
+table(data$SDC_INCOME)
+
+# Recoding income here so we can see the levels more easily
+
+data <- data %>%
+	mutate(income_recode = case_when(
+		SDC_INCOME == 1 ~ "1_Less than 10 000 $",
+    SDC_INCOME == 2 ~ "2_10 000 $ - 24 999 $",
+		SDC_INCOME == 3 ~ "3_25 000 $ - 49 999 $",
+		SDC_INCOME == 4 ~ "4_50 000 $ - 74 999 $",
+    SDC_INCOME == 5 ~ "5_75 000 $ - 99 999 $",
+		SDC_INCOME == 6 ~ "6_100 000 $ - 149 999 $",
+    SDC_INCOME == 7 ~ "7_150 000 $ - 199 999 $",
+    SDC_INCOME == 8 ~	"8_200 000 $ or more"
+	)) 
+
+data$income_recode <- as.factor(data$income_recode)
+
+table(data$SDC_INCOME, data$income_recode)
+
+
+```
+
+### Cleaning sitting data
+
+```{r}
+summary(data$PA_SIT_AVG_TIME_DAY)
+
+data <- data %>%
+          mutate(pa_sit = case_when(
+            PA_SIT_AVG_TIME_DAY > 800 ~ 800,
+            TRUE ~ PA_SIT_AVG_TIME_DAY
+          ))
+
+summary(data$pa_sit)
+```
+
+### Cleaning sitting data
+
+```{r}
+library(ggridges)
+library(harrypotter)
+
+ggplot(data, aes(x = pa_sit, y = income_recode,  fill = income_recode)) +
+  geom_density_ridges2(rel_min_height = 0.01) +
+  stat_density_ridges(quantile_lines = TRUE, alpha = 0.75,
+                      quantiles = 2) +
+  scale_fill_hp(discrete = TRUE, option = "LunaLovegood", name = "Income")
+```
+
+
