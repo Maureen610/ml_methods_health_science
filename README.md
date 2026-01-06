@@ -24,7 +24,7 @@ output:
 This course bridges the gap between data science techniques, biostatistics, and health research, equipping students with advanced tools to analyze complex health data. The course covers both the theoretical and practical aspects of machine learning. Through hands-on experience with R programming language, supervised and unsupervised machine learning techniques, and data visualization, students will learn to process and interpret large datasets to uncover insights into disease patterns, public health trends, and causal relationships. The course is designed to provide students with the theoretical knowledge and practical application of data science techniques. This will prepare learners to tackle health science challenges with modern data-driven approaches.
 
 ## Official Syllabus
-The official syllabus for this course is available for download [here]()
+The official syllabus for this course is available for download [here](https://github.com/walkabilly/ml_methods_health_science/blob/main/CHEP898_Machine_Learning_Methods_in_Health_Science_Syllabus_2026_approved.pdf)
 
 ## Prerequisites
 * CHEP/PUBH 805, or a graduate-level Statistics Course. 
@@ -116,7 +116,7 @@ The CanPath Student Dataset is available to instructors at a Canadian university
 | 6    | February 10 | Unsupervised Learning – Clustering                     | Clustering Methods                                                     |
 | 7    | February 17 | Reading Week                                           |                                                                        |
 | 8    | February 24 | Validation – Cross Validation + Bootstrapping          | Cross Validation + Bootstrapping – Applications with Linear Regression |
-| 9    | March 3     | Ensemble Methods – Random Forest                       | Causal Quartet + Causal Forest                                        |
+| 9    | March 3     | Ensemble Methods – Random Forest                       | Random Forest                                        |
 | 10   | March 17    | Causal Inference – Causal Forest                       | Causal Forest + Matching                                               |
 | 11   | March 24    | Ensemble Methods – Artificial Neural Networks          | Artificial Neural Networks                                             |
 | 12   | March 31    | Ensemble Methods – Transformers/Self-Supervised Learning | Artificial Neural Networks Part 2                                      |
