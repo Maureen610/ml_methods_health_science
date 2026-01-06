@@ -1,9 +1,9 @@
 # Data Work 
 
-| Week | Date        |                                                   | Data Work          |                                                 
+| Week | Date        | Data Work          |                                                 
 |------|-------------|------------------------------------------------------------------------|
-| 1    | January 6   | Data Wrangling and Visualization                                      |
-| 2    | January 13  | HappyGitwithR                                                         |
+| 1    | January 6   | [Data Wrangling and Visualization](https://github.com/walkabilly/ml_methods_health_science/blob/main/Data%20Work/data_wrangling.md)                                      |
+| 2    | January 13  | [HappyGitwithR](https://happygitwithr.com/)                                                         |
 | 3    | January 20  | Linear Regression                                                      |
 | 4    | January 27  | Logistic Regression and KNN                                            |
 | 5    | February 3  | Principal Component Analysis                                           |
