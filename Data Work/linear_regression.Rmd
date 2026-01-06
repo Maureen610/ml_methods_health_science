@@ -1,0 +1,401 @@
+---
+title: "Linear Regression"
+output:
+      html_document:
+        keep_md: true
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+library(sjPlot)
+library(psych)
+library(parallel)
+library(finalfit)
+library(gtsummary)
+library(mlbench)
+library(vip)
+library(rsample)
+library(tune)
+library(recipes)
+library(yardstick)
+library(parsnip)
+library(glmnet)
+library(themis)
+library(corrr)
+library(performance)
+library(utils)
+library(see)
+
+data <- read_csv("canpath_imputed.csv")
+```
+
+## Linear Regression
+
+A linear regression is a type of regression where the outcome variable is continuous and we assume it has a normal distribution. 
+
+#### Feature selection
+
+Feature selection is an important topic in ML because good predictor requires many features that are able to predict unique aspects of the outcome variable. 
+
+## Research question and data
+
+Our research question is:  
+
+**What factors are associated with BMI?**
+
+We have already worked on the imputed data from the missing data class so we are going to use that imputed data here as a starting point for the work. This is partly to save time for the teaching part of the class. Remember from the missing data class that ideally we would
+
+1. Conduct sensitivity analyses with a number of different imputation methods. 
+2. Account for uncertainty using pooled models. 
+
+We are going to skip that for now but I will show an example of how `tidymodels` imputes data later in this doc. 
+
+#### Outcome variable
+
+Let's look at the outcome variable, recode, and drop observations that are not relevant. We need to do a histogram and check the distribution. Then we might deal with outliers.  
+
+```{r}
+summary(data$PM_BMI_SR)
+
+bmi_histogram <- ggplot(data = data, aes(PM_BMI_SR)) +
+                  geom_histogram(binwidth = 2)
+plot(bmi_histogram)
+```
+
+Nice normal(ish) distribution here. We probably have some outliers on the low and high end with values of 8.86 and 69.40 
+
+We can recode people who are less than 10 and greater than 60 to values of 10 and 60 respectively. 
+
+```{r}
+data <- data %>%
+          mutate(bmi_recode = case_when(
+            PM_BMI_SR < 10 ~ 10, 
+            PM_BMI_SR > 60 ~ 60,
+            TRUE ~ PM_BMI_SR
+          ))
+summary(data$bmi_recode)
+
+bmi_recode_histogram <- ggplot(data = data, aes(bmi_recode)) +
+                  geom_histogram(binwidth = 2)
+plot(bmi_recode_histogram)
+```
+
+### Preparing predictor variables
+
+All of the predictors are coded as 0,1,2 are read in as numeric by R so we need to fix that. We could manually fix each variable but we are going to do something a bit different. All of the `_EVER` variables are coded as
+
+    * 0 Never had disease
+    * 1 Ever had disease
+    * 2 Presumed - Never had disease
+    * -7 Not Applicable
+
+We can batch recode all of these variables and make sure that they are factor and not numeric.
+
+```{r}
+data <- data %>% mutate_at(3, factor)
+data <- data %>% mutate_at(5:6, factor)
+data <- data %>% mutate_at(8:12, factor)
+data <- data %>% mutate_at(15:81, factor)
+data <- data %>% mutate_at(83:93, factor)
+```
+
+## Recoding
+
+**Age**
+
+```{r}
+summary(data$SDC_AGE_CALC) 
+
+### Checking NA
+
+data %>% summarise(
+                  n = n_distinct(SDC_AGE_CALC),
+                  na = sum(is.na(SDC_AGE_CALC)
+                           ))
+
+```
+
+**Income**
+
+```{r}
+glimpse(data$SDC_INCOME)
+
+table(data$SDC_INCOME)
+
+data <- data %>%
+	mutate(income_recode = case_when(
+		SDC_INCOME == 1 ~ "Less than 25 000 $",
+		SDC_INCOME == 2 ~ "Less than 25 000 $",
+		SDC_INCOME == 3 ~ "25 000 $ - 49 999 $",
+		SDC_INCOME == 4 ~ "50 000 $ - 74 999 $",
+		SDC_INCOME == 5 ~ "75 000 $ - 99 999 $",
+		SDC_INCOME == 6 ~ "100 000 $ - 149 999 $",		
+		SDC_INCOME == 7 ~ "150 000 $ - 199 999 $",
+		SDC_INCOME == 8 ~ "200 000 $ or more"
+	))
+
+glimpse(data$income_recode)
+
+data$income_recode <- as_factor(data$income_recode)
+
+data$income_recode <- fct_relevel(data$income_recode, "Less than 25 000 $", 
+                                                          "25 000 $ - 49 999 $",
+                                                          "50 000 $ - 74 999 $",
+                                                          "75 000 $ - 99 999 $",
+                                                          "100 000 $ - 149 999 $",
+                                                          "150 000 $ - 199 999 $",
+                                                          "200 000 $ or more"
+                                          )
+table(data$income_recode)
+
+table(data$income_recode, data$SDC_INCOME)
+```
+
+### Preliminary analysis
+
+#### Correlations 
+
+```{r}
+data1 <- data %>% select(1:10) ### Removing recoded variables so we don't try and regress them on themselves
+
+pairs.panels(data1,
+             scale = FALSE,      # If TRUE, scales the correlation text font
+             method = "spearman", # Correlation method (also "spearman" or "kendall")
+             lm = FALSE,         # If TRUE, plots linear fit rather than the LOESS (smoothed) fit
+             cor = TRUE,         # If TRUE, reports correlations
+             jiggle = FALSE,     # If TRUE, data points are jittered
+             stars = FALSE)       # If TRUE, adds significance level with stars)          
+```
+
+#### Univariable associations
+
+```{r}
+data <- data %>% select(!c(ID, PM_BMI_SR, SDC_INCOME)) ### Removing recoded variables so we don't try and regress them on themselves
+
+univ_table <- data %>%
+  tbl_uvregression(
+    method = glm,
+    y = bmi_recode,
+    method.args = list(family = gaussian)) 
+
+univ_table %>% as_kable()
+```
+
+We want to start by doing bivariable regression on the outcome and each variable. This can a be a bit of a process if we have lots of variables. Here we are using the `glm` (General Linear Model) function. 
+
+```{r}
+model_income <- glm(bmi_recode ~ income_recode, data = data, family = "gaussian")
+summary(model_income)
+
+model_income_table <- tbl_regression(model_income) 
+
+model_income_table %>% as_kable()
+```
+
+There are advantages and disadvantages to different was to display models. The `summary` method is good because we all of relevant output from the models. On the downside it's very ugly and hard to make nice tables with. The `tbl_regression` way is nice because we get nice output but we can miss things that might be relevant to our models. 
+
+We always want to look at all of the bivariate associations for each independent variable. We can do this quickly with the final fit package. For now ignore the multivariable model results. We just want to look at the bivariable. 
+
+## Machine Learning - Linear Regression 
+
+In a machine learning approach, in general, our interest is less on the specific associations we see between individual variables and the outcome and more on the overall performance of the model in terms of predicting the outcome. We can assess this with R2 or RMSE. In ML, another key concept is model performance on unseen data. With the biostatistics approach, we want to know if the model fits some known distribution (think linear regression) but with ML we don't really care about that, we care about model performance with unseen data. Hopefully, that will sense later. 
+
+### Resampling (Part 1)
+
+More machine learning we need a way to split the data into a training set and a test set. There are a few different approaches too this. Here we are going to use an 70/30 split with 70% of the data going to training and 30 going to testing. This is sort of an older way to split data and I would say that a k-fold cross validation is probably more in line with modern practice. We will test this out later.  
+
+```{r}
+# Fix the random numbers by setting the seed 
+# This enables the analysis to be reproducible when random numbers are used 
+set.seed(10)
+
+data_split <- initial_split(data, prop = 0.70)
+
+# Create data frames for the two sets:
+train_data <- training(data_split)
+summary(train_data$bmi_recode)
+
+test_data  <- testing(data_split)
+summary(test_data$bmi_recode)
+```
+
+Now we have split the data, we want to create the model for the training data and save it so it can be applied to the testing set. This is basically exactly what we did before. __Note that we only run the model on the training data__ Not all of the data like you would in a traditional linear regression. Here we won't get the exact same result as our original linear regression because we don't have the same data. We expect there will be some variation but that the results should relatively similar. 
+
+### 3.2 Running the regression
+
+We need to decide what variables are going to go in our model. We could use traditional methods 
+
+* Forward selection
+* Backward selection
+* Direct Acyclic Graphs
+
+Here we are going to use Lasso and Ridge regression techniques, which are more akin to ML types of approaches. But first, let's just run a model with a few variables to show testing and training. 
+
+```{r}
+lm_simple <- linear_reg() %>%
+        set_engine("glm") %>%
+        set_mode("regression") %>%
+        fit(bmi_recode ~ SDC_GENDER + SDC_AGE_CALC + SDC_EDU_LEVEL_AGE + SDC_HOUSEHOLD_CHILDREN_NB + HS_GEN_HEALTH + DIS_DIAB_EVER, data = train_data)
+```
+
+### 3.3 Test the trained model
+
+Once we `train the model` we want to understand how well our trained model works on new data the model has not seen. This is where the testing data comes in. We can use the `predict` feature for this. What we are doing here is predicting if someone has diabetes (yes/no) from the model we trained using the training data, on the testing data. We had 4293 observations in the training with 4077 people with on diabetes and 216 people with diabetes. Much of this example comes from [https://medium.com/the-researchers-guide/modelling-binary-logistic-regression-using-tidymodels-library-in-r-part-1-c1bdce0ac055](https://medium.com/the-researchers-guide/modelling-binary-logistic-regression-using-tidymodels-library-in-r-part-1-c1bdce0ac055)
+
+The code below outputs the predict class `diabetes (yes/no)` for the test data. 
+
+```{r}
+pred_bmi <- predict(lm_simple,
+                      new_data = test_data)
+summary(pred_bmi$.pred)
+summary(test_data$bmi_recode)
+```
+
+Now we want to combine all of our results into one dataframe and just do a quick check. 
+
+```{r}
+pred_true <- test_data |>
+  select(bmi_recode) |>
+  bind_cols(pred_bmi)
+
+head(pred_true)
+```
+
+Here we can see the first 6 rows of data. The model predicts some people with NA but others are NA. We didn't do anything with the missing values just yet so the model is quite dependent on having data for the predictors and the outcome.
+
+### 3.3 Model evaluation
+
+There are a number of different methods we must use to evaluate machine learning models. We will walk through those. 
+
+```{r}
+lm_simple |> 
+  extract_fit_engine() |> 
+  check_model()
+```
+
+#### Root Mean Squared Error
+
+We can calculate the MAE (Mean absolute error) and RMSE (Root Mean Squared Error), which is typically reported in linear models for ML. 
+
+* MAE: Is a metric that tells us the mean absolute difference between the predicted values and the actual values in a dataset. The lower the MAE, the better a model fits a dataset.
+* RMSE: Is a metric that tells us the square root of the average squared difference between the predicted values and the actual values in a dataset. The lower the RMSE, the better a model fits a dataset.
+
+```{r}
+rsq(pred_true, truth = bmi_recode,
+         estimate = .pred)
+```
+
+```{r}
+rmse(lm_simple, truth = bmi_recode,
+         estimate = .pred)
+```
+
+## Tidymodels 
+
+We have started using `tidymodels` but we are going to get into a bit more detail now. Tidymodels uses a 4(ish) step process to make the process of running models, selecting variables, model tuning, and getting results relatively easy. This is different from what you will see in the Intro to Stat learning book. Both are fine, but Tidymodels makes the variable selection, tuning, and visualization process much, much easier. 
+
+### Data splitting 
+
+We already saw the data splitting part as well. 
+
+```{}
+# Fix the random numbers by setting the seed 
+# This enables the analysis to be reproducible when random numbers are used 
+set.seed(10)
+
+data_split <- initial_split(data, prop = 0.70)
+
+# Create data frames for the two sets:
+train_data <- training(data_split)
+summary(train_data$bmi_recode)
+
+test_data  <- testing(data_split)
+summary(test_data$bmi_recode)
+```
+
+### Models
+
+We already saw the model building stuff above. Here we use the tidy models to setup a model using `glm` and `regression` and we call the specific model we want to fit. 
+
+```{r}
+linear_model <- linear_reg() %>%
+        set_engine("glm") %>%
+        set_mode("regression")
+```
+
+### Recipes 
+
+The recipe() function as we used it here has two arguments
+
+1. A formula. Any variable on the left-hand side of the tilde (~) is considered the model outcome (here, arr_delay). On the right-hand side of the tilde are the predictors. Variables may be listed by name, or you can use the dot (.) to indicate all other variables as predictors.
+2. The data. A recipe is associated with the data set used to create the model. This will typically be the training set, so data = train_data here. Naming a data set doesn’t actually change the data itself; it is only used to catalog the names of the variables and their types, like factors, integers, dates, etc.
+
+Now we can add roles to this recipe. We can use the update_role() function to let recipes know that `ADM_STUDY_ID` is a variable with a custom role that we called "ID" (a role can have any character value). Whereas our formula included all variables in the training set other than bmi_recode as predictors (that's what the `.` does), this tells the recipe to keep these two variables but not use them as either outcomes or predictors.
+
+### 3.5. Transforming features (variables)
+
+In machine learning these is a lot of emphasis placed on data pre-processing. Here we are going to talk about two approaches that you are probably familiar with but not in the machine learning context. Normalization/Standardization and creating one-hot encoding/dummy variables. 
+
+#### Normalization/Standardization
+
+Common practice in ML is normalize/standardize/z-score all of the continuous variables in a model. This creates variables with a mean of 0 and a standard deviation of 1. Doing this makes the specific coefficients of the association between the feature and outcome less interpretable BUT it helps a lot with model convergence and speed. Having continuous variables on lots of different scales can quickly create problems with model convergence. 
+
+#### One-hot encoding/dummy variables
+
+One-hot encoding or dummy variable coding converts all categorical variables into 0/1 versions of those variables rather than having them as factors with a dataframe. This encoding creates dummy variables from all categorical predictors. This again, speeds up computation time and can help with interpretation. It's not 100% necessary to do this, but you will see that it is common practice and often it's important just to know the words.
+
+```{r}
+bmi_recipe <- 
+  recipe(bmi_recode ~ ., data = train_data) %>% 
+  update_role(ADM_STUDY_ID, new_role = "ID") %>% 
+  step_normalize(all_numeric_predictors()) %>% ### Mean center and standardize (z-score) the numeric predictors
+  step_dummy(all_nominal_predictors()) %>% ### One hot encoding. Dramatically improves model performance with many factors
+  step_zv(all_predictors()) ### Remove columns from the data when the training set data have a single value. Zero variance predictor
+
+summary(bmi_recipe)
+```
+
+### Workflow
+
+A workflow connects our recipe with out model. The workflow let's us setup the models without actually have run things over and over again. This is helpful because as you will sometimes models can take a long time to run. 
+
+```{r}
+bmi_workflow <- 
+        workflow() %>% 
+        add_model(linear_model) %>% 
+        add_recipe(bmi_recipe)
+
+bmi_workflow
+```
+
+### Fit a model 
+
+```{r}
+bmi_fit <- 
+  bmi_workflow %>% 
+  fit(data = train_data)
+```
+
+
+```{r}
+bmi_fit %>% 
+  extract_fit_parsnip() %>% 
+  tidy()
+```
+
+### Predict on new data
+
+```{r}
+bmi_predicted <- augment(bmi_fit, test_data)
+```
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
