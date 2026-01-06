@@ -131,19 +131,18 @@ Attendance and participation and reading ahead are critical to this course. Ther
 
 You can find the detailed descriptions for all assignments below or in the assignments folder [here](https://github.com/walkabilly/data_science_for_epi_usask/tree/main/Assignments)
 
-| # | Assignment                         | Grade % |
-|---|------------------------------------|---------|
-| 1 | Data Wrangling and Visualization   | 10%     |
-| 2 | Github                             | 5%      |
-| 3 | Unsupervised Learning              | 15%     |
-| 4 | Independent Analysis – Part 1      | 10%     |
-| 5 | Supervised Learning                | 15%     |
-| 6 | Causal Forest                      | 10%     |
-| 7 | Artificial Neural Network          | 15%     |
-| 8 | Scientific Computing               | 5%      |
-| 9 | Independent Analysis – Part 2      | 15%     |
-|   | **Total**                          | **100%**|
-
+| # | Assignment                         | Grade % | Due Date          |
+|---|------------------------------------|---------|-------------------|
+| 1 | Data Wrangling and Visualization   | 10%     | January 19, 2026  |
+| 2 | Github                             | 5%      | January 26, 2026  |
+| 3 | Unsupervised Learning              | 15%     | February 9, 2026  |
+| 4 | Independent Analysis – Part 1      | 10%     | February 23, 2026 |
+| 5 | Supervised Learning                | 15%     | March 9, 2026     |
+| 6 | Causal Forest                      | 10%     | March 23, 2026    |
+| 7 | Artificial Neural Network          | 15%     | April 6, 2026     |
+| 8 | Scientific Computing               | 5%      | April 20, 2026    |
+| 9 | Independent Analysis – Part 2      | 15%     | April 20, 2026    |
+|   | **Total**                          | **100%**|                   |
 
 ## Assignment Descriptions
 
